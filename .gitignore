@@ -1,2 +1,26 @@
-node_modules
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+
+# Coverage/Build
+coverage
+/dist
+/build
+
+# Environment variables
 .env
+.env.local
+
+# IDE/Editor
+.vscode
+.idea

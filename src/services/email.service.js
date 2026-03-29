@@ -6,7 +6,7 @@ const transporter = nodemailer.createTransport({
         type:"OAuth2",
         user: config.GOOGLE_USER,
         clientId: config.CLIENT_ID,
-        clientSecret: config.CLEINT_SECRET,
+        clientSecret: config.CLIENT_SECRET,
         refreshToken: config.REFRESH_TOKEN,
     }
 })

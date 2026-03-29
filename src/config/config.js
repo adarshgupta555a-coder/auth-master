@@ -27,7 +27,7 @@ if (!process.env.GOOGLE_USER) {
 export const config = {
     MONGOOSE_URL: process.env.MONGOOSE_URL,
     CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
-    CLEINT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
     REFRESH_TOKEN: process.env.GOOGLE_REFRESH_TOKEN,
     GOOGLE_USER: process.env.GOOGLE_USER
 }

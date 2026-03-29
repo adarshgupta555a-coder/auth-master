@@ -6,6 +6,8 @@ import sendMail from "../services/sendMail.service.js";
 import sessionModel from "../models/session.model.js";
 import otpModel from "../models/otp.model.js"
 import { generateOtp, generateOTPHTML } from "../utils/generateOtp.js";
+import crypto from "crypto";
+
 configDotenv()
 
 export const register = async (req, res) => {
@@ -28,7 +30,8 @@ export const register = async (req, res) => {
         const otpGenerator = generateOtp();
         const OTPHTML = generateOTPHTML(otpGenerator)
 
-        const otpHash = await bcrypt.hash(String(otpGenerator), 12);
+        const otpHash = crypto.createHash("sha256").update(String(otpGenerator)).digest("hex");
+
         await otpModel.create({
             email: user.email,
             user: user._id,
@@ -52,6 +55,10 @@ export const getMe = async (req, res) => {
 
         if (!token) {
             return res.status(400).send("token is not found")
+        }
+
+        if (!process.env.JWT_SECRET) {
+            throw new Error("JWT_SECRET is missing in .env");
         }
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -93,9 +100,8 @@ export const login = async (req, res) => {
             expiresIn: "7d"
         })
 
-        const salt = await bcrypt.genSalt(12);
-        const hashRefreshToken = await bcrypt.hash(RefreshToken, salt)
 
+        const hashRefreshToken = crypto.createHash("sha256").update(RefreshToken).digest("hex");
         const session = await sessionModel.create({
             user: userEmail._id,
             refreshTokenHash: hashRefreshToken,
@@ -112,7 +118,7 @@ export const login = async (req, res) => {
         res.cookie("RefreshToken", RefreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
+            sameSite: "lax",
             maxAge: 7 * 24 * 60 * 60 * 1000,
         });
 
@@ -134,33 +140,28 @@ export const refreshToken = async (req, res) => {
             return res.status(400).send({ message: "token is not defined" })
         }
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        // const salt = await bcrypt.genSalt(12);
-        const session = await sessionModel.find({user: decoded.id, revoked: false });
-        let sessionCheck = null;
-        for (let s of session) {
-            const match = await bcrypt.compare(token, s.refreshTokenHash);
-            if (match) {
-                sessionCheck = s;
-                break;
-            }
-        }
-        if (!sessionCheck) {
+
+        const refreshTokenHash = crypto.createHash("sha256").update(token).digest("hex");
+        const session = await sessionModel.findOne({ refreshTokenHash, revoked: false });
+
+        if (!session) {
             return res.status(400).send({ message: "user refreshtoken is invalid." })
         }
 
-        const AccessToken = jwt.sign({ id: decoded.id, session_id: sessionCheck._id }, process.env.JWT_SECRET, { expiresIn: "15m" });
+        const AccessToken = jwt.sign({ id: decoded.id, sessionId: session._id}, process.env.JWT_SECRET, { expiresIn: "15m" });
 
         const newRefreshToken = jwt.sign({ id: decoded.id }, process.env.JWT_SECRET, { expiresIn: "7d" })
-        const newSalt = await bcrypt.genSalt(12);
-        const newrefreshTokenHash = await bcrypt.hash(newRefreshToken, newSalt);
-        sessionCheck.refreshTokenHash = newrefreshTokenHash;
-        await sessionCheck.save();
+
+        const newrefreshTokenHash = crypto.createHash("sha256").update(newRefreshToken).digest("hex");
+
+        session.refreshTokenHash = newrefreshTokenHash;
+        await session.save();
 
 
         res.cookie("RefreshToken", newRefreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
+            sameSite: "lax",
             maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
         })
 
@@ -176,15 +177,14 @@ export const refreshToken = async (req, res) => {
 export const verifyOtp = async (req, res) => {
     try {
         const { otp, email } = req.body;
-        const otpCheck = await otpModel.findOne({ email }).sort({ createdAt: -1 })
+
+        const otpHash = crypto.createHash("sha256").update(otp).digest("hex");
+        const otpCheck = await otpModel.findOne({ email, otpHash })
+
         if (!otpCheck) {
             return res.status(400).send({ message: "otp is invalid." })
         }
-        const isMatch = await bcrypt.compare(otp, otpCheck.otpHash)
 
-        if (!isMatch) {
-            return res.status(400).send({ message: "otp is invalid." })
-        }
 
         const userUpdate = await userModel.findByIdAndUpdate(otpCheck.user, { isVerified: true });
 
@@ -207,23 +207,17 @@ export const logout = async (req, res) => {
             return res.status(400).send({ message: "token is not found" })
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const session = await sessionModel.find({ user: decoded.id, revoked: false });
-        let sessionCheck = null;
-        for (let s of session) {
-            const match = await bcrypt.compare(token, s.refreshTokenHash);
-            if (match) {
-                sessionCheck = s;
-                break;
-            }
-        }
 
-        if (!sessionCheck) {
+        const refreshTokenHash = crypto.createHash("sha256").update(token).digest("hex")
+        const session = await sessionModel.findOne({ refreshTokenHash, revoked: false });
+      
+
+        if (!session) {
             return res.status(400).send({ message: "session is not found" })
         }
 
-        sessionCheck.revoked = true;
-        await sessionCheck.save();
+        session.revoked = true;
+        await session.save();
 
         res.clearCookie("RefreshToken")
 
@@ -257,7 +251,7 @@ export const logoutAll = async (req, res) => {
 
     } catch (error) {
         console.log(error)
-        res.status(500).send({ message: "logged out from all devices successfully" })
+        res.status(500).send({ message: "something went wrong" })
     }
 }
 
